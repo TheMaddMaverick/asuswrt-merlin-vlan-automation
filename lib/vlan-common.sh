@@ -103,6 +103,58 @@ interface_exists() {
   [ -d "/sys/class/net/$interface_name" ]
 }
 
+# Print the bridge containing an interface.
+# Return 1 when no bridge membership can be found.
+bridge_for_interface() {
+  interface_name=${1-}
+
+  validate_interface_name "interface name" "$interface_name" || return 2
+
+  bridge_link="/sys/class/net/$interface_name/brport/bridge"
+
+  if [ -L "$bridge_link" ]; then
+    bridge_path=$(readlink "$bridge_link" 2>/dev/null) || return 1
+    bridge_name=${bridge_path##*/}
+
+    validate_interface_name "detected bridge name" "$bridge_name" || return 2
+    printf '%s\n' "$bridge_name"
+    return 0
+  fi
+
+  if ! which brctl >/dev/null 2>&1; then
+    return 1
+  fi
+
+  brctl show 2>/dev/null | awk -v target="$interface_name" '
+        NR == 1 {
+            next
+        }
+
+        NF >= 3 {
+            bridge = $1
+
+            if (NF >= 4 && $4 == target) {
+                print bridge
+                found = 1
+                exit
+            }
+
+            next
+        }
+
+        NF == 1 && $1 == target {
+            print bridge
+            found = 1
+            exit
+        }
+
+        END {
+            if (!found)
+                exit 1
+        }
+    '
+}
+
 wait_for_interface() {
   interface_name=${1-}
   timeout_seconds=${WAIT_TIMEOUT_SECONDS:-30}
