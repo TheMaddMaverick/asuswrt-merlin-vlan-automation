@@ -1,0 +1,117 @@
+#!/bin/sh
+# shellcheck shell=sh
+
+PATH="/sbin:/bin:/usr/sbin:/usr/bin"
+export PATH
+
+# Configuration maps are intentionally split on whitespace later.
+# Disable pathname expansion so configuration values cannot expand as globs.
+set -f
+
+LIB_FILE="${LIB_FILE:-/jffs/scripts/lib/vlan-common.sh}"
+CONFIG_FILE="${CONFIG_FILE:-/jffs/configs/vlan-automation.conf}"
+
+if [ ! -r "$LIB_FILE" ]; then
+  printf '%s\n' "ERROR: Common library is not readable: $LIB_FILE" >&2
+  exit 1
+fi
+
+# shellcheck disable=SC1090
+. "$LIB_FILE" || {
+  printf '%s\n' "ERROR: Unable to load common library: $LIB_FILE" >&2
+  exit 1
+}
+
+load_config || exit 1
+LOG_TAG=$HEALTH_LOG_TAG
+
+log_message "INFO" "Wireless bridge health check starting"
+
+if [ -z "$VIF_BRIDGE_MAP" ]; then
+  fail "VIF_BRIDGE_MAP is empty; no wireless interfaces are configured"
+  exit 1
+fi
+
+health_checked=0
+health_problems=0
+
+for health_entry in $VIF_BRIDGE_MAP; do
+  case $health_entry in
+  *:*:*)
+    fail "Invalid VIF_BRIDGE_MAP entry; too many colons: '$health_entry'"
+    health_problems=$((health_problems + 1))
+    continue
+    ;;
+  ?*:?*)
+    health_interface=${health_entry%%:*}
+    health_expected_bridge=${health_entry#*:}
+    ;;
+  *)
+    fail "Invalid VIF_BRIDGE_MAP entry; expected INTERFACE:BRIDGE: '$health_entry'"
+    health_problems=$((health_problems + 1))
+    continue
+    ;;
+  esac
+
+  if ! validate_interface_name "VIF interface" "$health_interface"; then
+    health_problems=$((health_problems + 1))
+    continue
+  fi
+
+  if ! validate_interface_name "VIF bridge" "$health_expected_bridge"; then
+    health_problems=$((health_problems + 1))
+    continue
+  fi
+
+  health_checked=$((health_checked + 1))
+
+  if ! interface_exists "$health_interface"; then
+    log_message "ERROR" "Interface '$health_interface' is missing"
+    health_problems=$((health_problems + 1))
+    continue
+  fi
+
+  if ! interface_exists "$health_expected_bridge"; then
+    log_message "ERROR" "Expected bridge '$health_expected_bridge' is missing"
+    health_problems=$((health_problems + 1))
+    continue
+  fi
+
+  health_current_bridge=$(bridge_for_interface "$health_interface")
+  health_lookup_status=$?
+
+  case $health_lookup_status in
+  0)
+    if [ "$health_current_bridge" != "$health_expected_bridge" ]; then
+      log_message "WARN" \
+        "Interface '$health_interface' is on '$health_current_bridge'; expected '$health_expected_bridge'"
+      health_problems=$((health_problems + 1))
+    fi
+    ;;
+  1)
+    log_message "WARN" \
+      "Interface '$health_interface' is not attached to a bridge; expected '$health_expected_bridge'"
+    health_problems=$((health_problems + 1))
+    ;;
+  *)
+    log_message "ERROR" \
+      "Unable to determine bridge membership for '$health_interface'"
+    health_problems=$((health_problems + 1))
+    ;;
+  esac
+done
+
+if [ "$health_checked" -eq 0 ]; then
+  fail "No valid VIF_BRIDGE_MAP entries were found"
+  exit 1
+fi
+
+if [ "$health_problems" -eq 0 ]; then
+  log_message "INFO" \
+    "OK: all $health_checked configured interfaces are on their expected bridges"
+  exit 0
+fi
+
+log_message "WARN" \
+  "$health_problems problem(s) found across $health_checked configured interface(s)"
+exit 1
