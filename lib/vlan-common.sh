@@ -96,6 +96,44 @@ validate_vlan_id() {
   return 0
 }
 
+interface_exists() {
+  interface_name=${1-}
+
+  validate_interface_name "interface name" "$interface_name" || return 1
+  [ -d "/sys/class/net/$interface_name" ]
+}
+
+wait_for_interface() {
+  interface_name=${1-}
+  timeout_seconds=${WAIT_TIMEOUT_SECONDS:-30}
+  interval_seconds=${WAIT_INTERVAL_SECONDS:-1}
+
+  validate_interface_name "interface name" "$interface_name" || return 1
+  validate_positive_integer "WAIT_TIMEOUT_SECONDS" "$timeout_seconds" || return 1
+  validate_positive_integer "WAIT_INTERVAL_SECONDS" "$interval_seconds" || return 1
+
+  elapsed_seconds=0
+
+  while ! interface_exists "$interface_name"; do
+    if [ "$elapsed_seconds" -ge "$timeout_seconds" ]; then
+      fail "Timed out after ${timeout_seconds}s waiting for interface '$interface_name'"
+      return 1
+    fi
+
+    remaining_seconds=$((timeout_seconds - elapsed_seconds))
+    sleep_seconds=$interval_seconds
+
+    if [ "$sleep_seconds" -gt "$remaining_seconds" ]; then
+      sleep_seconds=$remaining_seconds
+    fi
+
+    sleep "$sleep_seconds"
+    elapsed_seconds=$((elapsed_seconds + sleep_seconds))
+  done
+
+  return 0
+}
+
 load_config() {
   if [ ! -r "$CONFIG_FILE" ]; then
     fail "Configuration is not readable: $CONFIG_FILE"
