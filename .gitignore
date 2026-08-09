@@ -1,0 +1,5 @@
+*.bak*
+*.xtrace
+*.log
+.env
+config.local*
