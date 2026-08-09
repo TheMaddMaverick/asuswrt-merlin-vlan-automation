@@ -155,6 +155,80 @@ bridge_for_interface() {
     '
 }
 
+move_interface_to_bridge() {
+  move_interface=${1-}
+  move_target_bridge=${2-}
+
+  validate_interface_name "interface name" "$move_interface" || return 1
+  validate_interface_name "target bridge" "$move_target_bridge" || return 1
+
+  if ! interface_exists "$move_interface"; then
+    fail "Interface does not exist: $move_interface"
+    return 1
+  fi
+
+  if ! interface_exists "$move_target_bridge"; then
+    fail "Target bridge does not exist: $move_target_bridge"
+    return 1
+  fi
+
+  move_current_bridge=$(bridge_for_interface "$move_interface")
+  move_lookup_status=$?
+
+  case $move_lookup_status in
+  0)
+    if [ "$move_current_bridge" = "$move_target_bridge" ]; then
+      return 0
+    fi
+    ;;
+  1)
+    move_current_bridge=""
+    ;;
+  *)
+    fail "Unable to determine current bridge for '$move_interface'"
+    return 1
+    ;;
+  esac
+
+  if [ -n "$move_current_bridge" ]; then
+    run_mutation brctl delif "$move_current_bridge" "$move_interface" ||
+      return 1
+  fi
+
+  if ! run_mutation brctl addif "$move_target_bridge" "$move_interface"; then
+    if [ "${DRY_RUN:-1}" = "0" ] && [ -n "$move_current_bridge" ]; then
+      log_message "WARN" \
+        "Restoring '$move_interface' to '$move_current_bridge'"
+
+      run_mutation brctl addif "$move_current_bridge" "$move_interface" ||
+        fail "Rollback failed for '$move_interface'"
+    fi
+
+    return 1
+  fi
+
+  run_mutation ip link set "$move_interface" up || return 1
+
+  if [ "${DRY_RUN:-1}" = "1" ]; then
+    return 0
+  fi
+
+  sleep "${WAIT_INTERVAL_SECONDS:-1}"
+
+  move_verified_bridge=$(bridge_for_interface "$move_interface")
+  move_verify_status=$?
+
+  if [ "$move_verify_status" -ne 0 ] ||
+    [ "$move_verified_bridge" != "$move_target_bridge" ]; then
+    fail "Unable to verify '$move_interface' on '$move_target_bridge'"
+    return 1
+  fi
+
+  log_message "INFO" \
+    "Moved '$move_interface' to '$move_target_bridge'"
+  return 0
+}
+
 wait_for_interface() {
   interface_name=${1-}
   timeout_seconds=${WAIT_TIMEOUT_SECONDS:-30}
