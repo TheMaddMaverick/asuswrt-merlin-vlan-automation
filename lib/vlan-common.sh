@@ -60,6 +60,42 @@ validate_positive_integer() {
   fi
 }
 
+validate_interface_name() {
+  name=$1
+  value=$2
+
+  case $value in
+  '' | *[!A-Za-z0-9_.-]*)
+    fail "$name must use only letters, digits, dots, underscores, or hyphens; received '$value'"
+    return 1
+    ;;
+  esac
+
+  if [ "${#value}" -gt 15 ]; then
+    fail "$name must be 15 characters or fewer; received '$value'"
+    return 1
+  fi
+
+  return 0
+}
+
+validate_vlan_id() {
+  name=$1
+  value=$2
+
+  if ! is_uint "$value" || [ "${#value}" -gt 4 ]; then
+    fail "$name must be a VLAN ID from 1 through 4094; received '$value'"
+    return 1
+  fi
+
+  if [ "$value" -lt 1 ] || [ "$value" -gt 4094 ]; then
+    fail "$name must be a VLAN ID from 1 through 4094; received '$value'"
+    return 1
+  fi
+
+  return 0
+}
+
 load_config() {
   if [ ! -r "$CONFIG_FILE" ]; then
     fail "Configuration is not readable: $CONFIG_FILE"
@@ -104,6 +140,23 @@ load_config() {
 
   validate_positive_integer \
     "WAIT_INTERVAL_SECONDS" "$WAIT_INTERVAL_SECONDS" || return 1
+
+  return 0
+}
+
+run_mutation() {
+  if [ "${DRY_RUN:-1}" = "1" ]; then
+    log_message "INFO" "DRY-RUN: $*"
+    return 0
+  fi
+
+  "$@"
+  status=$?
+
+  if [ "$status" -ne 0 ]; then
+    fail "Command failed with status $status: $*"
+    return "$status"
+  fi
 
   return 0
 }
