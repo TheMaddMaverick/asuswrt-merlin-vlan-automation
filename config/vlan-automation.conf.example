@@ -1,0 +1,46 @@
+# shellcheck shell=sh
+#
+# Example configuration for ASUSWRT-Merlin VLAN automation.
+# Copy this file to /jffs/configs/vlan-automation.conf and customize it.
+#
+# This file is sourced as POSIX shell code. Use simple KEY="value"
+# assignments only. Never place passwords, keys, or SSID credentials here.
+
+CONFIG_VERSION="1"
+
+# Safe defaults: make no changes and only report health problems.
+DRY_RUN="1"
+HEALTH_REPAIR="0"
+TRACE_ENABLED="0"
+
+WAIT_TIMEOUT_SECONDS="30"
+WAIT_INTERVAL_SECONDS="1"
+
+BOOT_LOG_TAG="vlan-automation"
+HEALTH_LOG_TAG="wifi-health"
+
+# Required before active use.
+TRUNK_INTERFACE=""
+
+# Space-separated entries using VLAN_ID:BRIDGE.
+VLAN_BRIDGE_MAP=""
+
+# Space-separated VLAN IDs previously created on the trunk interface.
+STALE_VLAN_IDS=""
+
+# Space-separated INTERFACE:BRIDGE entries.
+PORT_BRIDGE_MAP=""
+VIF_BRIDGE_MAP=""
+
+# Space-separated NVRAM keys whose desired value is 1.
+RADIO_NVRAM_KEYS=""
+BSS_NVRAM_KEYS=""
+
+# Example syntax only; these values are fictional:
+# TRUNK_INTERFACE="trunk0"
+# VLAN_BRIDGE_MAP="100:br100 200:br200"
+# STALE_VLAN_IDS="300 301"
+# PORT_BRIDGE_MAP="lan1:br100 lan2:br200"
+# VIF_BRIDGE_MAP="wifi_guest_1:br100 wifi_guest_2:br200"
+# RADIO_NVRAM_KEYS="radio0_enabled radio1_enabled"
+# BSS_NVRAM_KEYS="guest0_enabled guest1_enabled"
