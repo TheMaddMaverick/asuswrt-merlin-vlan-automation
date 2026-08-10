@@ -27,6 +27,35 @@ LOG_TAG=$HEALTH_LOG_TAG
 
 log_message "INFO" "Wireless bridge health check starting"
 
+attempt_bridge_repair() {
+  health_repair_interface=${1-}
+  health_repair_bridge=${2-}
+
+  if [ "$HEALTH_REPAIR" != "1" ]; then
+    return 1
+  fi
+
+  log_message "INFO" \
+    "Repair requested for '$health_repair_interface' -> '$health_repair_bridge'"
+
+  if ! move_interface_to_bridge \
+    "$health_repair_interface" "$health_repair_bridge"; then
+    log_message "ERROR" \
+      "Repair failed for '$health_repair_interface'"
+    return 1
+  fi
+
+  if [ "$DRY_RUN" = "1" ]; then
+    log_message "INFO" \
+      "DRY-RUN: repair was not applied to '$health_repair_interface'"
+    return 1
+  fi
+
+  log_message "INFO" \
+    "Repair verified for '$health_repair_interface' on '$health_repair_bridge'"
+  return 0
+}
+
 if [ -z "$VIF_BRIDGE_MAP" ]; then
   fail "VIF_BRIDGE_MAP is empty; no wireless interfaces are configured"
   exit 1
@@ -34,6 +63,7 @@ fi
 
 health_checked=0
 health_problems=0
+health_repaired=0
 
 for health_entry in $VIF_BRIDGE_MAP; do
   case $health_entry in
@@ -85,13 +115,25 @@ for health_entry in $VIF_BRIDGE_MAP; do
     if [ "$health_current_bridge" != "$health_expected_bridge" ]; then
       log_message "WARN" \
         "Interface '$health_interface' is on '$health_current_bridge'; expected '$health_expected_bridge'"
-      health_problems=$((health_problems + 1))
+
+      if attempt_bridge_repair \
+        "$health_interface" "$health_expected_bridge"; then
+        health_repaired=$((health_repaired + 1))
+      else
+        health_problems=$((health_problems + 1))
+      fi
     fi
     ;;
   1)
     log_message "WARN" \
       "Interface '$health_interface' is not attached to a bridge; expected '$health_expected_bridge'"
-    health_problems=$((health_problems + 1))
+
+    if attempt_bridge_repair \
+      "$health_interface" "$health_expected_bridge"; then
+      health_repaired=$((health_repaired + 1))
+    else
+      health_problems=$((health_problems + 1))
+    fi
     ;;
   *)
     log_message "ERROR" \
@@ -107,8 +149,14 @@ if [ "$health_checked" -eq 0 ]; then
 fi
 
 if [ "$health_problems" -eq 0 ]; then
-  log_message "INFO" \
-    "OK: all $health_checked configured interfaces are on their expected bridges"
+  if [ "$health_repaired" -gt 0 ]; then
+    log_message "INFO" \
+      "OK: repaired $health_repaired of $health_checked configured interface(s)"
+  else
+    log_message "INFO" \
+      "OK: all $health_checked configured interfaces are on their expected bridges"
+  fi
+
   exit 0
 fi
 
