@@ -280,6 +280,8 @@ load_config() {
   DRY_RUN="${DRY_RUN:-1}"
   HEALTH_REPAIR="${HEALTH_REPAIR:-0}"
   TRACE_ENABLED="${TRACE_ENABLED:-0}"
+  TRACE_DIRECTORY="${TRACE_DIRECTORY:-/jffs}"
+  TRACE_RETENTION_DAYS="${TRACE_RETENTION_DAYS:-7}"
 
   WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-30}"
   WAIT_INTERVAL_SECONDS="${WAIT_INTERVAL_SECONDS:-1}"
@@ -298,6 +300,21 @@ load_config() {
   validate_boolean "DRY_RUN" "$DRY_RUN" || return 1
   validate_boolean "HEALTH_REPAIR" "$HEALTH_REPAIR" || return 1
   validate_boolean "TRACE_ENABLED" "$TRACE_ENABLED" || return 1
+  validate_positive_integer \
+    "TRACE_RETENTION_DAYS" "$TRACE_RETENTION_DAYS" || return 1
+
+  case $TRACE_DIRECTORY in
+  /)
+    fail "TRACE_DIRECTORY cannot be the filesystem root"
+    return 1
+    ;;
+  /*)
+    ;;
+  *)
+    fail "TRACE_DIRECTORY must be an absolute path: '$TRACE_DIRECTORY'"
+    return 1
+    ;;
+  esac
 
   validate_positive_integer \
     "WAIT_TIMEOUT_SECONDS" "$WAIT_TIMEOUT_SECONDS" || return 1
