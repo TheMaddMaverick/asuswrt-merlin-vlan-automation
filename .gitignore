@@ -3,3 +3,9 @@
 *.log
 .env
 config.local*
+
+# Local/private router artifacts
+*.original
+*.private-working
+*.private
+private/

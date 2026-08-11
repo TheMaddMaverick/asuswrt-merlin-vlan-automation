@@ -1,0 +1,109 @@
+#!/bin/sh
+# shellcheck shell=sh
+
+PATH="/sbin:/bin:/usr/sbin:/usr/bin"
+export PATH
+
+umask 077
+set -f
+
+LIB_FILE="${LIB_FILE:-/jffs/scripts/lib/vlan-common.sh}"
+CONFIG_FILE="${CONFIG_FILE:-/jffs/configs/vlan-automation.conf}"
+
+if [ ! -r "$LIB_FILE" ]; then
+  printf '%s\n' "ERROR: Common library is not readable: $LIB_FILE" >&2
+  exit 1
+fi
+
+# shellcheck disable=SC1090
+. "$LIB_FILE" || {
+  printf '%s\n' "ERROR: Unable to load common library: $LIB_FILE" >&2
+  exit 1
+}
+
+load_config || exit 1
+LOG_TAG=$BOOT_LOG_TAG
+
+enable_trace() {
+  [ "$TRACE_ENABLED" = "1" ] || return 0
+
+  if [ ! -d "$TRACE_DIRECTORY" ]; then
+    fail "Trace directory does not exist: $TRACE_DIRECTORY"
+    return 1
+  fi
+
+  if [ ! -w "$TRACE_DIRECTORY" ]; then
+    fail "Trace directory is not writable: $TRACE_DIRECTORY"
+    return 1
+  fi
+
+  trace_timestamp=$(date '+%Y%m%d-%H%M%S') || {
+    fail "Unable to generate trace timestamp"
+    return 1
+  }
+
+  trace_file="$TRACE_DIRECTORY/services-start.$trace_timestamp.$$.xtrace"
+
+  if ! : >>"$trace_file"; then
+    fail "Unable to create trace file: $trace_file"
+    return 1
+  fi
+
+  chmod 600 "$trace_file" || {
+    fail "Unable to protect trace file: $trace_file"
+    return 1
+  }
+
+  exec 2>>"$trace_file"
+  PS4='+ services-start: '
+  set -x
+
+  log_message "INFO" "Trace enabled: $trace_file"
+}
+
+cleanup_old_traces() {
+  [ "$TRACE_ENABLED" = "1" ] || return 0
+
+  trace_cleanup_status=0
+
+  set +f
+  for trace_candidate in "$TRACE_DIRECTORY"/services-start.*.xtrace; do
+    if [ ! -f "$trace_candidate" ] || [ -L "$trace_candidate" ]; then
+      continue
+    fi
+
+    trace_cleanup_match=$(
+      find "$trace_candidate" \
+        -mtime +"$TRACE_RETENTION_DAYS" -print 2>/dev/null
+    )
+    trace_cleanup_find_status=$?
+
+    if [ "$trace_cleanup_find_status" -ne 0 ]; then
+      fail "Unable to inspect trace age: $trace_candidate"
+      trace_cleanup_status=1
+      continue
+    fi
+
+    [ -n "$trace_cleanup_match" ] || continue
+
+    if run_mutation rm -f "$trace_candidate"; then
+      if [ "$DRY_RUN" = "0" ]; then
+        log_message "INFO" \
+          "Removed old trace file: $trace_candidate"
+      fi
+    else
+      trace_cleanup_status=1
+    fi
+  done
+  set -f
+
+  return "$trace_cleanup_status"
+}
+
+enable_trace || exit 1
+
+log_message "INFO" "VLAN automation bootstrap starting"
+cleanup_old_traces || exit 1
+log_message "INFO" "Bootstrap foundation loaded; no network changes requested"
+
+exit 0
